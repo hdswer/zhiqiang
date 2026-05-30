@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>臺灣圖資雲 - 我的地圖</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        .custom-div-icon { background: transparent; border: none; }
+        .leaflet-container { z-index: 10; font-family: inherit; }
+        .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
+        .leaflet-popup-content { margin: 12px 16px; font-size: 14px; font-weight: 500;}
+        .leaflet-control-layers { border-radius: 8px !important; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1) !important; border: none !important; }
+        
+        /* 自訂捲軸樣式 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* 響應式高度設定 */
+        #app-container { height: 100vh; height: 100dvh; }
+        @media (max-width: 768px) {
+            #sidebar { height: 45%; max-height: 45%; }
+            #map-wrapper { height: 55%; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 m-0 p-0 overflow-hidden font-sans">
+    
+    <div id="app-container" class="flex flex-col md:flex-row w-full">
+        <!-- 左側面板 (側邊欄) -->
+        <div id="sidebar" class="w-full md:w-96 bg-white shadow-xl flex flex-col z-20 relative border-r border-gray-200">
+            <!-- 標題 -->
+            <div class="bg-blue-700 text-white p-4 flex items-center gap-3 shrink-0 shadow-md z-20">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+                <h1 class="font-bold text-lg tracking-wide">我的地圖 <span class="text-xs text-blue-300 font-normal ml-1">Powered by NLSC</span></h1>
+            </div>
+
+            <!-- 搜尋區塊 -->
+            <div class="p-4 bg-white border-b shrink-0 z-10 relative">
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <input type="text" id="searchInput" placeholder="搜尋地點或地址..." class="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition shadow-inner">
+                        <svg class="w-4 h-4 text-gray-400 absolute left-3 top-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    <button id="searchBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition shadow shrink-0">搜尋</button>
+                </div>
+                <!-- 搜尋結果 -->
+                <div id="searchResults" class="mt-3 max-h-48 overflow-y-auto space-y-2 hidden"></div>
+            </div>
+
+            <!-- 興趣點列表 -->
+            <div class="flex-1 overflow-y-auto p-4 bg-gray-50 flex flex-col gap-3">
+                <div class="flex items-center justify-between mb-1">
+                    <h2 class="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                        我的興趣點
+                    </h2>
+                    <span class="text-xs text-white bg-blue-600 px-2 py-0.5 rounded-full shadow-sm" id="poiCount">0</span>
+                </div>
+                <p class="text-xs text-gray-500 mb-2">💡 提示：點擊右側地圖任意處，亦可手動新增自訂標記。</p>
+                
+                <div id="emptyState" class="text-center p-8 bg-white border border-dashed border-gray-300 rounded-lg text-gray-400 text-sm hidden">
+                    <svg class="w-10 h-10 mx-auto text-gray-300 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    目前沒有儲存的興趣點。<br>試著搜尋地點，或在地圖上點擊以新增！
+                </div>
+
+                <ul id="poiList" class="space-y-3 pb-6">
+                    <!-- JavaScript 將在此動態生成列表 -->
+                </ul>
+            </div>
+        </div>
+        
+        <!-- 地圖區塊 -->
+        <div id="map-wrapper" class="w-full md:flex-1 relative z-10 bg-gray-200">
+            <div id="map" class="w-full h-full"></div>
+            <!-- 重新定位按鈕 -->
+            <button id="locateBtn" class="absolute bottom-6 right-6 z-[1000] bg-white p-3 rounded-full shadow-xl border border-gray-100 hover:bg-gray-50 text-blue-600 transition" title="定位我的位置">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M22 12h-2"/><path d="M4 12H2"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- 自訂輸入對話框 (Modal) -->
+    <div id="modalOverlay" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[9999] hidden flex justify-center items-center backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-xl shadow-2xl w-[90%] max-w-sm p-6 transform transition-all">
+            <h3 id="modalTitle" class="text-lg font-bold text-gray-900 mb-1">新增興趣點</h3>
+            <p id="modalDesc" class="text-sm text-gray-500 mb-4 whitespace-pre-line leading-relaxed">請輸入此地點的名稱</p>
+            <input type="text" id="modalInput" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none mb-5" placeholder="例如：我的家、好吃餐廳...">
+            <div class="flex justify-end gap-3">
+                <button id="modalCancel" class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">取消</button>
+                <button id="modalConfirm" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md transition">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自訂確認對話框 (Confirm) -->
+    <div id="confirmOverlay" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-[9999] hidden flex justify-center items-center backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-xl shadow-2xl w-[90%] max-w-sm p-6 transform transition-all">
+            <h3 id="confirmTitle" class="text-lg font-bold text-gray-900 mb-1">確認刪除</h3>
+            <p id="confirmDesc" class="text-sm text-gray-500 mb-5">確定要刪除這個興趣點嗎？此動作無法復原。</p>
+            <div class="flex justify-end gap-3">
+                <button id="confirmCancel" class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">保留</button>
+                <button id="confirmBtn" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-md transition">確定刪除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // === 狀態管理 ===
+        let map;
+        let pois = [];
+        let markers = {};
+        let searchMarkers = [];
+
+        // === UI 元素參照 ===
+        const poiListEl = document.getElementById('poiList');
+        const emptyStateEl = document.getElementById('emptyState');
+        const poiCountEl = document.getElementById('poiCount');
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const searchResultsContainer = document.getElementById('searchResults');
+
+        // === 建立自訂地圖圖釘 SVG ===
+        function createPinIcon(color) {
+            return L.divIcon({
+                html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" stroke="white" stroke-width="1.5" width="36" height="36" style="filter: drop-shadow(0px 3px 3px rgba(0,0,0,0.3));">
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>
+                </svg>`,
+                className: 'custom-div-icon',
+                iconSize: [36, 36],
+                iconAnchor: [18, 34], 
+                popupAnchor: [0, -32]
+            });
+        }
+        const iconRed = createPinIcon('#ef4444');  // 儲存的興趣點顏色
+        const iconBlue = createPinIcon('#3b82f6'); // 搜尋結果顏色
+
+        // === 對話框控制模組 (取代原生的 prompt / confirm) ===
+        const inputModal = {
+            overlay: document.getElementById('modalOverlay'),
+            title: document.getElementById('modalTitle'),
+            desc: document.getElementById('modalDesc'),
+            input: document.getElementById('modalInput'),
+            resolvePromise: null,
+            show: function(title, desc, defaultText = '') {
+                this.title.textContent = title;
+                this.desc.textContent = desc;
+                this.input.value = defaultText;
+                this.overlay.classList.remove('hidden');
+                setTimeout(() => this.input.focus(), 100);
+                return new Promise((resolve) => { this.resolvePromise = resolve; });
+            },
+            hide: function(result = null) {
+                this.overlay.classList.add('hidden');
+                if (this.resolvePromise) {
+                    this.resolvePromise(result);
+                    this.resolvePromise = null;
+                }
+            }
+        };
+        document.getElementById('modalCancel').onclick = () => inputModal.hide(null);
+        document.getElementById('modalConfirm').onclick = () => inputModal.hide(inputModal.input.value.trim());
+        document.getElementById('modalInput').onkeydown = (e) => { if (e.key === 'Enter') inputModal.hide(inputModal.input.value.trim()); };
+
+        const confirmModal = {
+            overlay: document.getElementById('confirmOverlay'),
+            title: document.getElementById('confirmTitle'),
+            desc: document.getElementById('confirmDesc'),
+            resolvePromise: null,
+            show: function(title, desc) {
+                this.title.textContent = title;
+                this.desc.textContent = desc;
+                this.overlay.classList.remove('hidden');
+                return new Promise((resolve) => { this.resolvePromise = resolve; });
+            },
+            hide: function(result) {
+                this.overlay.classList.add('hidden');
+                if (this.resolvePromise) {
+                    this.resolvePromise(result);
+                    this.resolvePromise = null;
+                }
+            }
+        };
+        document.getElementById('confirmCancel').onclick = () => confirmModal.hide(false);
+        document.getElementById('confirmBtn').onclick = () => confirmModal.hide(true);
+
+        // === 初始化應用程式 ===
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            initGPS();
+            loadPOIs();
+        });
+
+        function initMap() {
+            // 初始化地圖，中心設定在台灣
+            map = L.map('map', { zoomControl: false }).setView([23.7, 120.9], 8);
+            
+            // 移除了預設 Zoom Control 並將其加在右下角
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            // 內政部國土測繪中心 (NLSC) WMTS 圖層
+            const emap = L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}', {
+                maxZoom: 20,
+                attribution: '地圖資料 © <a href="https://maps.nlsc.gov.tw/" target="_blank">內政部國土測繪中心</a>'
+            });
+            const photo2 = L.tileLayer('https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}', {
+                maxZoom: 20,
+                attribution: '衛星影像 © <a href="https://maps.nlsc.gov.tw/" target="_blank">內政部國土測繪中心</a>'
+            });
+
+            // 預設套疊通用電子地圖
+            emap.addTo(map);
+
+            // 加入圖層切換控制
+            L.control.layers({
+                "臺灣通用電子地圖 (預設)": emap,
+                "正射影像圖 (衛星)": photo2
+            }, null, { position: 'topright' }).addTo(map);
+
+            // 點擊地圖新增興趣點
+            map.on('click', async function(e) {
+                const lat = e.latlng.lat;
+                const lng = e.latlng.lng;
+                const name = await inputModal.show("📍 新增興趣點", `座標位置: ${lat.toFixed(5)}, ${lng.toFixed(5)}\n請輸入名稱:`);
+                if (name) {
+                    addPOI({ 
+                        id: Date.now().toString(), 
+                        name: name, 
+                        lat: lat, 
+                        lng: lng, 
+                        address: `${lat.toFixed(4)}, ${lng.toFixed(4)}` 
+                    });
+                }
+            });
+        }
+
+        // === 興趣點 (POI) 邏輯 ===
+        function addPOI(poi) {
+            pois.unshift(poi); // 加在最前面
+            savePOIs();
+            renderPOIs();
+            addMarkerToMap(poi);
+            
+            // 畫面平滑移動至新點位
+            map.flyTo([poi.lat, poi.lng], 15);
+            setTimeout(() => { if(markers[poi.id]) markers[poi.id].openPopup(); }, 500);
+        }
+
+        async function removePOI(id, name) {
+            const confirmed = await confirmModal.show('刪除興趣點', `確定要將「${name}」從地圖上移除嗎？`);
+            if (confirmed) {
+                pois = pois.filter(p => p.id !== id);
+                if (markers[id]) {
+                    map.removeLayer(markers[id]);
+                    delete markers[id];
+                }
+                savePOIs();
+                renderPOIs();
+            }
+        }
+
+        function addMarkerToMap(poi) {
+            const marker = L.marker([poi.lat, poi.lng], { icon: iconRed }).addTo(map);
+            marker.bindPopup(`<div class="font-bold text-gray-800">${poi.name}</div><div class="text-xs text-gray-500 mt-1">${poi.address || '自訂標記'}</div>`);
+            markers[poi.id] = marker;
+        }
+
+        function renderPOIs() {
+            poiListEl.innerHTML = '';
+            poiCountEl.textContent = pois.length;
+            
+            if (pois.length === 0) {
+                emptyStateEl.classList.remove('hidden');
+            } else {
+                emptyStateEl.classList.add('hidden');
+                
+                pois.forEach(poi => {
+                    const li = document.createElement('li');
+                    li.className = 'group flex justify-between items-center p-3 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition cursor-pointer';
+                    
+                    const infoDiv = document.createElement('div');
+                    infoDiv.className = 'flex-1 overflow-hidden pr-2';
+                    infoDiv.innerHTML = `
+                        <h4 class="text-sm font-bold text-gray-800 truncate">${poi.name}</h4>
+                        <p class="text-xs text-gray-500 truncate mt-0.5">${poi.address || '自訂座標'}</p>
+                    `;
+                    
+                    // 點擊列表項目移動地圖
+                    infoDiv.onclick = () => {
+                        map.flyTo([poi.lat, poi.lng], 16);
+                        markers[poi.id].openPopup();
+                    };
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'text-gray-400 hover:text-red-500 bg-gray-50 hover:bg-red-50 p-2 rounded-lg transition shrink-0';
+                    delBtn.innerHTML = `<svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
+                    delBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        removePOI(poi.id, poi.name);
+                    };
+
+                    li.appendChild(infoDiv);
+                    li.appendChild(delBtn);
+                    poiListEl.appendChild(li);
+                });
+            }
+        }
+
+        // === 儲存與讀取 (LocalStorage) ===
+        function savePOIs() {
+            try { localStorage.setItem('nlsc_my_pois', JSON.stringify(pois)); } catch(e) {}
+        }
+        function loadPOIs() {
+            try {
+                const saved = localStorage.getItem('nlsc_my_pois');
+                if (saved) {
+                    pois = JSON.parse(saved);
+                    pois.forEach(p => addMarkerToMap(p));
+                    renderPOIs();
+                } else {
+                    renderPOIs(); // 觸發空狀態顯示
+                }
+            } catch(e) {}
+        }
+
+        // === 搜尋功能 (透過 Nominatim 進行地名解析) ===
+        const performSearch = async () => {
+            const query = searchInput.value.trim();
+            if (!query) return;
+            
+            searchBtn.disabled = true;
+            searchBtn.innerHTML = '<span class="animate-pulse">搜尋中...</span>';
+            
+            try {
+                // 使用免費開源的 Nominatim API，並限制範圍在台灣
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=tw&limit=6`);
+                const data = await res.json();
+                
+                searchResultsContainer.innerHTML = '';
+                searchMarkers.forEach(m => map.removeLayer(m));
+                searchMarkers = [];
+
+                if (data.length === 0) {
+                    searchResultsContainer.classList.remove('hidden');
+                    searchResultsContainer.innerHTML = '<div class="text-sm text-gray-500 p-4 text-center bg-gray-50 rounded-lg border">找不到符合的地點 😢</div>';
+                    return;
+                }
+
+                searchResultsContainer.classList.remove('hidden');
+                
+                data.forEach((item) => {
+                    const lat = parseFloat(item.lat);
+                    const lon = parseFloat(item.lon);
+                    const displayName = item.display_name;
+                    const shortName = item.name || displayName.split(',')[0];
+                    
+                    // 地圖上暫時顯示的藍色標記
+                    const marker = L.marker([lat, lon], { icon: iconBlue, zIndexOffset: -100 }).addTo(map);
+                    marker.bindPopup(`<div class="font-bold text-blue-700">${shortName}</div><div class="text-xs text-gray-500 mt-1">預覽搜尋結果</div>`);
+                    searchMarkers.push(marker);
+
+                    // 側邊欄搜尋結果項目
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'text-sm p-3 bg-blue-50/50 border border-blue-100 rounded-lg flex flex-col gap-2 hover:bg-blue-50 transition';
+                    
+                    const textSpan = document.createElement('div');
+                    textSpan.className = 'cursor-pointer text-gray-800 font-medium w-full overflow-hidden';
+                    textSpan.innerHTML = `${shortName} <div class="text-xs text-gray-500 font-normal truncate mt-1">${displayName}</div>`;
+                    textSpan.onclick = () => {
+                        map.flyTo([lat, lon], 16);
+                        marker.openPopup();
+                    };
+                    
+                    const addBtn = document.createElement('button');
+                    addBtn.className = 'self-end bg-blue-600 text-white text-xs px-3 py-1.5 rounded-md shadow-sm hover:bg-blue-700 transition flex items-center gap-1';
+                    addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg> 新增`;
+                    
+                    addBtn.onclick = async () => {
+                        const confirmName = await inputModal.show("新增搜尋結果", `將此地點加入我的地圖`, shortName);
+                        if (confirmName) {
+                            addPOI({ 
+                                id: Date.now().toString(), 
+                                name: confirmName, 
+                                lat: lat, 
+                                lng: lon, 
+                                address: displayName 
+                            });
+                            // 清理搜尋狀態
+                            searchInput.value = '';
+                            searchResultsContainer.innerHTML = '';
+                            searchResultsContainer.classList.add('hidden');
+                            searchMarkers.forEach(m => map.removeLayer(m));
+                            searchMarkers = [];
+                        }
+                    };
+                    
+                    itemDiv.appendChild(textSpan);
+                    itemDiv.appendChild(addBtn);
+                    searchResultsContainer.appendChild(itemDiv);
+                });
+
+                // 將地圖視野平移縮放至包含所有搜尋結果
+                if (searchMarkers.length > 0) {
+                    const group = new L.featureGroup(searchMarkers);
+                    map.fitBounds(group.getBounds(), { padding: [40, 40], maxZoom: 15 });
+                }
+                
+            } catch (e) {
+                searchResultsContainer.classList.remove('hidden');
+                searchResultsContainer.innerHTML = '<div class="text-sm text-red-500 p-4 text-center bg-red-50 rounded-lg border border-red-100">網路或伺服器發生錯誤，請稍後再試。</div>';
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.innerHTML = '搜尋';
+            }
+        };
+
+        searchBtn.onclick = performSearch;
+        searchInput.onkeydown = (e) => { if (e.key === 'Enter') performSearch(); };
+
+        // === GPS 定位功能 ===
+        function initGPS() {
+            const locateBtn = document.getElementById('locateBtn');
+            let userLocationMarker = null;
+            
+            locateBtn.onclick = () => {
+                locateBtn.innerHTML = '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><svg class="relative" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M22 12h-2"/><path d="M4 12H2"/></svg>';
+                map.locate({setView: true, maxZoom: 16});
+            };
+
+            map.on('locationfound', function(e) {
+                locateBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M22 12h-2"/><path d="M4 12H2"/></svg>';
+                
+                const radius = e.accuracy / 2;
+                if (userLocationMarker) {
+                    map.removeLayer(userLocationMarker.marker);
+                    map.removeLayer(userLocationMarker.circle);
+                }
+                
+                const marker = L.circleMarker(e.latlng, { radius: 6, fillColor: "#2563eb", color: "#ffffff", weight: 2, opacity: 1, fillOpacity: 1 }).addTo(map);
+                const circle = L.circle(e.latlng, radius, { color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, weight: 1 }).addTo(map);
+                
+                userLocationMarker = { marker, circle };
+            });
+
+            map.on('locationerror', function(e) {
+                locateBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20z"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M22 12h-2"/><path d="M4 12H2"/></svg>';
+                // 忽略錯誤或由瀏覽器自動處理權限提示
+            });
+        }
+    </script>
+</body>
+</html>
